@@ -1,20 +1,21 @@
 import fitz
-import re
 
-def extract_structured_toc_fitz(pdf_path):
+def extract_clean_toc(pdf_path):
     doc = fitz.open(pdf_path)
-    page = doc[0]  # only page 0
+    page = doc[0]
+    indent_threshold = 100
 
     blocks = page.get_text("dict")["blocks"]
-
     lines = []
+
+    # Step 1: Extract raw lines
     for block in blocks:
         for line in block.get("lines", []):
             spans = line.get("spans", [])
             if not spans:
                 continue
             text = " ".join(span["text"] for span in spans).strip()
-            if not text:
+            if not text or text.lower() in ["table of contents", "march 18, 2025"]:
                 continue
             x0 = spans[0]["bbox"][0]
             y0 = spans[0]["bbox"][1]
@@ -22,29 +23,53 @@ def extract_structured_toc_fitz(pdf_path):
                 "text": text,
                 "x0": x0,
                 "y0": y0,
-                "font_size": spans[0]["size"]
+                "linked": False,
+                "target_page": None
             })
 
-    # clean and sort
+    # Step 2: Match links to lines
+    links = page.get_links()
+    for link in links:
+        if "page" not in link or not link.get("from"):
+            continue
+        rect = link["from"]
+        text = page.get_text("text", clip=rect)
+        if not text:
+            continue
+        text = text.strip()
+        for line in lines:
+            if line["text"] == text:
+                line["linked"] = True
+                line["target_page"] = str(link["page"])
+
+    # Step 3: Sort lines top-to-bottom
     lines = sorted(lines, key=lambda l: l["y0"])
-    lines = [l for l in lines if l["text"].lower() not in ["table of contents", "march 18, 2025"]]
 
+    # Step 4: Final pass to build TOC
     toc = []
-    current_section = None
-    page_number_pattern = re.compile(r'.+?\s+(\d{1,4})$')
-
-    for line in lines:
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         text = line["text"]
-        match = page_number_pattern.match(text)
+        x0 = line["x0"]
+        linked = line["linked"]
+        page_num = line["target_page"]
 
-        if match and line["x0"] > 100:  # indented and ends with page number
-            title = text.rsplit(" ", 1)[0].strip()
-            page_no = match.group(1)
-            if current_section:
-                toc.append([2, title, page_no])
-        else:
-            # heading (likely level 1)
-            current_section = text
-            toc.append([1, text, "0"])
+        if x0 <= indent_threshold:
+            # Level 1
+            if not linked:
+                # Look ahead for next Level 2's page number
+                for j in range(i + 1, len(lines)):
+                    next_line = lines[j]
+                    if next_line["linked"] and next_line["x0"] > indent_threshold:
+                        page_num = next_line["target_page"]
+                        break
+            toc.append([1, text, page_num or "0"])
+
+        elif linked and x0 > indent_threshold:
+            # Level 2
+            toc.append([2, text, page_num])
+
+        i += 1
 
     return toc
