@@ -1,34 +1,36 @@
-import fitz
+import fitz  # PyMuPDF
 
-def extract_structured_toc(pdf_path):
+def extract_clean_toc(pdf_path, max_toc_pages=2, indent_threshold=100):
+    """
+    Extracts a clean TOC from the first few pages of the PDF based on embedded hyperlinks.
+    
+    Args:
+        pdf_path (str): Path to the input PDF.
+        max_toc_pages (int): Number of pages to check for TOC (default: 2).
+        indent_threshold (int): x0 threshold to determine level (default: 100).
+    
+    Returns:
+        list of [level, section name, page number]
+    """
     doc = fitz.open(pdf_path)
-    entries = []
+    toc_entries = []
 
-    for page_no in range(len(doc)):
-        links = doc[page_no].get_links()
+    for page_no in range(min(max_toc_pages, len(doc))):
+        page = doc[page_no]
+        links = page.get_links()
+
         for link in links:
-            if "page" in link:
-                target_page = link["page"] + 1
-                rect = link["from"]
-                y0 = rect.y0
-                text = doc[page_no].get_text("text", clip=rect).strip()
-                if text:
-                    entries.append((page_no + 1, y0, text, target_page))
+            if "page" not in link or not link.get("from"):
+                continue
 
-    # Sort by TOC page, then y-position (top to bottom)
-    entries.sort(key=lambda x: (x[0], x[1]))
+            target_page = link["page"] + 1  # convert 0-based to 1-based
+            rect = link["from"]
+            text = page.get_text("text", clip=rect).strip()
 
-    # Assign levels based on y-diff or indentation (naive logic below)
-    structured = []
-    last_y = None
-    for toc_page, y0, text, target_page in entries:
-        if last_y is None:
-            level = 1
-        elif y0 - last_y > 15:
-            level = 2
-        else:
-            level = 1
-        last_y = y0
-        structured.append([level, text, target_page])
+            if not text or text.isspace():
+                continue
 
-    return structured
+            level = 2 if rect.x0 > indent_threshold else 1
+            toc_entries.append([level, text, target_page])
+
+    return toc_entries
