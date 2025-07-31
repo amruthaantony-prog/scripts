@@ -16,12 +16,13 @@ def extract_clean_toc(pdf_path):
             if "page" not in link or not link.get("from"):
                 continue
 
-            target_page = link["page"] + 1  # 0-based to 1-based
+            target_page = link["page"]  # ✅ no +1
             rect = link["from"]
-            text = page.get_text("text", clip=rect).strip()
+            text = page.get_text("text", clip=rect)
             if not text or text.isspace():
                 continue
 
+            text = text.strip()
             level = 2 if rect.x0 > indent_threshold else 1
             key = (text.lower(), target_page)
             if key not in seen_entries:
@@ -46,10 +47,10 @@ def extract_clean_toc(pdf_path):
                 # Heuristics for level-1 headings
                 if (
                     max_font > 10 and                         # likely heading
-                    len(line_text.split()) <= 6 and          # not a paragraph
-                    not any(line_text.lower() in e[1].lower() and str(page_no + 1) == e[2] for e in toc_entries)
+                    len(line_text.split()) <= 6 and           # not a paragraph
+                    not any(line_text.lower() == e[1].lower() and str(page_no) == e[2] for e in toc_entries)
                 ):
-                    toc_entries.append([1, line_text, str(page_no + 1)])
-                    seen_entries.add((line_text.lower(), page_no + 1))
+                    toc_entries.append([1, line_text, str(page_no)])
+                    seen_entries.add((line_text.lower(), page_no))
 
     return toc_entries
