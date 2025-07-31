@@ -1,54 +1,34 @@
-import fitz  # PyMuPDF
+import fitz
+import easyocr
+import re
 
-def extract_clean_toc(pdf_path):
+def extract_toc_easyocr(pdf_path):
+    # Step 1: Render page 0 to image
     doc = fitz.open(pdf_path)
-    toc_entries = []
-    indent_threshold = 100  # px
-    seen_entries = set()
+    pix = doc[0].get_pixmap(dpi=300)
+    img_path = "page0.png"
+    pix.save(img_path)
 
-    page = doc[0]  # 🔒 Only first page
+    # Step 2: OCR
+    reader = easyocr.Reader(['en'])
+    results = reader.readtext(img_path, detail=0)
 
-    # Step 1: Extract all clickable TOC links
-    links = page.get_links()
-    for link in links:
-        if "page" not in link or not link.get("from"):
+    # Step 3: Parse lines into TOC entries
+    toc = []
+    section_header = None
+    page_number_pattern = re.compile(r'(.+?)\s+(\d{1,4})$')  # e.g. "Q4 2024 Form 8-K 67"
+
+    for line in results:
+        line = line.strip()
+        if not line or line.lower() in ["table of contents", "march 18, 2025"]:
             continue
 
-        target_page = link["page"]  # ✅ keep as-is (0-based)
-        rect = link["from"]
-        text = page.get_text("text", clip=rect)
-        if not text or text.isspace():
-            continue
+        match = page_number_pattern.match(line)
+        if match:
+            title = match.group(1).strip()
+            page = match.group(2).strip()
+            toc.append([2, title, page])
+        else:
+            toc.append([1, line, "0"])  # assume page 0 for headers
 
-        text = text.strip()
-        level = 2 if rect.x0 > indent_threshold else 1
-        key = (text.lower(), target_page)
-        if key not in seen_entries:
-            toc_entries.append([level, text, str(target_page)])
-            seen_entries.add(key)
-
-    # Step 2: Add bold/large section headers (non-linked)
-    blocks = page.get_text("dict")["blocks"]
-    for block in blocks:
-        for line in block.get("lines", []):
-            spans = line.get("spans", [])
-            if not spans:
-                continue
-
-            line_text = " ".join([span["text"] for span in spans]).strip()
-            if not line_text or line_text.isspace():
-                continue
-
-            font_sizes = [round(span["size"]) for span in spans]
-            max_font = max(font_sizes)
-
-            # Heuristic: bold section headers (limit to short lines)
-            if (
-                max_font > 10 and
-                len(line_text.split()) <= 6 and
-                not any(line_text.lower() == e[1].lower() and e[2] == "0" for e in toc_entries)
-            ):
-                toc_entries.append([1, line_text, "0"])  # first page = "0"
-                seen_entries.add((line_text.lower(), 0))
-
-    return toc_entries
+    return toc
