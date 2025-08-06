@@ -56,17 +56,22 @@ def build_final_toc(matched, total_pages):
         label = normalize_section_name(name)
         result.append([1, label, start_page, end_page])
     return result
+BROKER_NAMES = [
+    "jpmorgan", "morgan stanley", "nomura", "bnp paribas",
+    "bofa global research", "goldman sachs", "ubs", "barclays", "hsbc", "jefferies",
+    "credit suisse", "citigroup", "rbc", "evercore", "wells fargo"
+]
 
 def merge_equity_research_sections(toc_list):
     merged = []
     i = 0
     while i < len(toc_list):
-        label, start, end = toc_list[i][1], toc_list[i][2], toc_list[i][3]
-        if label == "Equity Research":
-            merged_start = start
-            merged_end = end
+        label_lower = toc_list[i][1].lower()
+        if label_lower == "equity research":
+            merged_start = toc_list[i][2]
             i += 1
-            while i < len(toc_list) and "research" not in toc_list[i][1].lower():
+            merged_end = merged_start
+            while i < len(toc_list) and any(b in toc_list[i][1].lower() for b in BROKER_NAMES):
                 merged_end = toc_list[i][3]
                 i += 1
             merged.append([1, "Equity Research", merged_start, merged_end])
