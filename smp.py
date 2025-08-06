@@ -1,79 +1,91 @@
 import fitz  # PyMuPDF
 import easyocr
-import re
+import numpy as np
 
-# Load EasyOCR
-reader = easyocr.Reader(['en'], gpu=True)
+# Initialize EasyOCR reader
+reader = easyocr.Reader(['en'], gpu=True, download_enabled=False)
 
 def extract_toc_links(pdf_path):
     doc = fitz.open(pdf_path)
-    toc_links = []
-
-    for page_num in range(min(3, len(doc))):  # Only first 3 pages
-        page = doc.load_page(page_num)
-        for link in page.get_links():
-            if "page" in link:
-                text = page.get_textbox(link['from']) or ""
-                toc_links.append({
-                    "text": text.strip(),
-                    "page": link["page"]
-                })
-
-    return toc_links, len(doc)
+    toc_page = 0
+    links = doc[toc_page].get_links()
+    total_pages = len(doc)
+    toc_links = [{'label': l['uri'], 'page': l['page']} for l in links if 'page' in l]
+    return toc_links, total_pages
 
 def extract_toc_text(pdf_path):
     doc = fitz.open(pdf_path)
     toc_text = []
-
-    for page_num in range(min(3, len(doc))):
-        pix = doc[page_num].get_pixmap(dpi=500)
-        image = fitz.Pixmap(pix, 0) if pix.alpha else pix
-        img_array = image.samples.reshape(image.height, image.width, image.n)
-        lines = reader.readtext(img_array, detail=0)
-        toc_text.extend(lines)
-
+    page_num = 0  # Assuming TOC is on first page
+    pix = doc[page_num].get_pixmap(dpi=500)
+    image = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+    lines = reader.readtext(image, detail=0)
+    toc_text.extend(lines)
     return toc_text
 
-def match_lines_to_links(toc_text, toc_links):
-    matched = []
-    for line in toc_text:
-        for link in toc_links:
-            if line.lower().strip() in link['text'].lower().strip():
-                matched.append([line.strip(), link['page']])
-                break
-    return matched
+def match_lines_to_links(toc_lines, toc_links):
+    result = []
+    link_texts = [link['label'] for link in toc_links]
+    pages = [link['page'] for link in toc_links]
 
-def normalize_section_name(name):
-    name = name.lower()
-    if any(x in name for x in ["10-k", "10-q", "form"]):
-        return "Forms"
-    elif "transcript" in name or "call" in name:
+    for i, line in enumerate(toc_lines):
+        for j, text in enumerate(link_texts):
+            if text and text.lower().strip() in line.lower():
+                result.append((line.strip(), pages[j]))
+                break
+    return result
+
+def normalize_section_name(raw):
+    raw = raw.lower()
+    if "6-k" in raw:
+        return "6-K"
+    elif "20-f" in raw or "10-k" in raw:
+        return "20-F"
+    elif "call" in raw or "transcript" in raw:
         return "Earnings Transcript"
-    elif "press" in name or "presentation" in name:
+    elif "presentation" in raw:
         return "Earnings Release"
-    elif "research" in name:
+    elif "newsrun" in raw:
+        return "Recent News"
+    elif any(broker in raw for broker in [
+        "jpmorgan", "morgan", "bofa", "nomura", "barclays",
+        "rbc", "goldman", "wells", "deutsche", "citigroup", "equity research"
+    ]):
         return "Equity Research"
-    elif "investor" in name:
-        return "Investor Presentation"
-    else:
-        return name.title()
+    return raw.strip().title()
 
 def build_final_toc(matched, total_pages):
     result = []
     for i, (name, start_page) in enumerate(matched):
-        end_page = matched[i+1][1] - 1 if i+1 < len(matched) else total_pages - 1
+        try:
+            end_page = int(matched[i+1][1]) - 1 if i+1 < len(matched) else total_pages - 1
+        except:
+            end_page = total_pages - 1
         label = normalize_section_name(name)
-        result.append([1, label, start_page, end_page])  # Level 1
-    return result
+        result.append([1, label, int(start_page), end_page])  # force Level = 1
+    return merge_equity_research(result)
+
+def merge_equity_research(toc_list):
+    merged = []
+    current = None
+    for entry in toc_list:
+        level, name, start, end = entry
+        if name == "Equity Research":
+            if current is None:
+                current = [level, name, start, end]
+            else:
+                current[3] = end  # extend end page
+        else:
+            if current:
+                merged.append(current)
+                current = None
+            merged.append([level, name, start, end])
+    if current:
+        merged.append(current)
+    return merged
 
 def process_pdf(pdf_path):
     toc_links, total_pages = extract_toc_links(pdf_path)
     toc_text = extract_toc_text(pdf_path)
     matched = match_lines_to_links(toc_text, toc_links)
     return build_final_toc(matched, total_pages)
-
-# Example usage
-pdf_path = "your_pib_file.pdf"
-toc_output = process_pdf(pdf_path)
-
-print(toc_output)
