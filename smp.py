@@ -57,6 +57,26 @@ def build_final_toc(matched, total_pages):
         result.append([1, label, start_page, end_page])
     return result
 
+def merge_equity_research_sections(toc_list):
+    merged = []
+    i = 0
+    while i < len(toc_list):
+        label, start, end = toc_list[i][1], toc_list[i][2], toc_list[i][3]
+        if label == "Equity Research":
+            merged_start = start
+            merged_end = end
+            i += 1
+            while i < len(toc_list) and "research" not in toc_list[i][1].lower():
+                merged_end = toc_list[i][3]
+                i += 1
+            merged.append([1, "Equity Research", merged_start, merged_end])
+        else:
+            merged.append(toc_list[i])
+            i += 1
+    return merged
+
+
+
 def process_pdf(pdf_path):
     with fitz.open(pdf_path) as doc:
         total_pages = len(doc)
