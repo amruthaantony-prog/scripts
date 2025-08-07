@@ -99,27 +99,33 @@ BROKER_NAMES = [
 def merge_equity_research_sections(toc_list):
     merged = []
     i = 0
+
     while i < len(toc_list):
-        label_lower = toc_list[i][1].lower()
+        current = toc_list[i]
+        label_lower = current[1].lower()
+
         if label_lower == "equity research":
-            equity_start = toc_list[i][2]
+            equity_start = current[2]
             i += 1
-            equity_end = equity_start
             level2_brokers = []
-            while i < len(toc_list) and any(b in toc_list[i][1].lower() for b in BROKER_NAMES):
-                broker_label = toc_list[i][1].strip().title()
-                broker_start = toc_list[i][2]
-                broker_end = toc_list[i][3]
-                level2_brokers.append([2, broker_label, broker_start, broker_end])
-                equity_end = broker_end
+            equity_end = equity_start
+
+            # Collect broker sections until the next Level 1 section or end
+            while i < len(toc_list) and toc_list[i][0] == 1 and any(b in toc_list[i][1].lower() for b in BROKER_NAMES):
+                broker = toc_list[i]
+                level2_brokers.append([2, broker[1].title(), broker[2], broker[3]])
+                equity_end = broker[3]
                 i += 1
-            # Add Level 1 Equity Research
+
+            # Add Equity Research Level 1
             merged.append([1, "Equity Research", equity_start, equity_end])
-            # Add Level 2 Brokers
+            # Add Level 2 brokers
             merged.extend(level2_brokers)
+
         else:
-            merged.append(toc_list[i])
+            merged.append(current)
             i += 1
+
     return merged
 
 
@@ -133,4 +139,3 @@ def process_pdf(pdf_path):
         toc = build_final_toc(matched, total_pages)
         final_toc = merge_equity_research_sections(toc)
         return final_toc
-
