@@ -1,19 +1,17 @@
-import fitz  # PyMuPDF
-import easyocr
-import re
+import fitz
 import numpy as np
+import re
 
-reader = easyocr.Reader(['en'])
-
+# BROKER list for Equity Research grouping
 BROKER_NAMES = [
     "jpmorgan", "morgan stanley", "nomura", "bnp paribas",
-    "bofa", "goldman sachs", "ubs", "barclays", "hsbc", "jefferies",
-    "credit suisse", "citigroup", "rbc", "evercore", "wells fargo",
-    "oppenheimer", "scotiabank", "william blair", "deutsche bank"
+    "bofa global research", "goldman sachs", "ubs", "barclays", "hsbc", "jefferies",
+    "credit suisse", "citigroup", "rbc", "evercore", "wells fargo", "oppenheimer",
+    "scotiabank", "william blair", "deutsche bank"
 ]
 
 def find_toc_page(doc):
-    for page_num in range(min(3, len(doc))):  # Only first 3 pages
+    for page_num in range(min(3, len(doc))):
         page = doc.load_page(page_num)
         links = page.get_links()
         if len(links) > 5:
@@ -39,8 +37,8 @@ def extract_toc_text(doc, toc_page):
     lines = reader.readtext(image_array, detail=0)
     return lines
 
-def remove_date(text):
-    return re.sub(r"\(\s*[^()]*\d{4}[^()]*\)", "", text).strip()
+def strip_dates(text):
+    return re.sub(r'\(?\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[^\)]*\)?', '', text).strip()
 
 def match_lines_to_links(toc_text, toc_links):
     matched = []
@@ -50,45 +48,38 @@ def match_lines_to_links(toc_text, toc_links):
             continue
         if re.match(r"^[A-Da-d][\).]?$", stripped_line):
             continue
+        cleaned_line = strip_dates(stripped_line.lower())
         for link in toc_links:
-            if stripped_line.lower() in link['text'].lower().strip():
+            link_text = strip_dates(link['text'].lower())
+            if cleaned_line in link_text:
                 matched.append((stripped_line, link["page"]))
                 break
     return matched
 
 def normalize_section_name(name):
-    name = remove_date(name).lower()
+    lowered = name.lower()
 
-    if "10-k" in name:
-        return "Form 10-K"
-    elif "10-q" in name:
-        return "Form 10-Q"
-    elif "8-k" in name or "8k" in name:
-        return "Form 8-K"
-    elif "transcript" in name or "call" in name:
-        return "Earnings Transcript"
-    elif "press" in name or "presentation" in name:
-        if "investor" in name:
-            return "Investor Presentation"
-        else:
-            return "Earnings Release"
-    elif "investor" in name:
+    if "investor" in lowered:
         return "Investor Presentation"
-    elif "news" in name:
+    if "transcript" in lowered or "call" in lowered:
+        return "Earnings Transcript"
+    if "press" in lowered or "presentation" in lowered:
+        return "Earnings Release"
+    if "news" in lowered:
         return "Recent News"
-    elif "equity" in name:
+    if "equity" in lowered:
         return "Equity Research"
-    elif any(broker in name for broker in BROKER_NAMES):
-        return name.title()  # Keep original broker name
-    else:
-        return name.title()
+    if "form" in lowered:  # Preserve Forms section naming
+        return name.strip()
+    return name.title()
 
 def build_final_toc(matched, total_pages):
     result = []
     for i, (name, start_page) in enumerate(matched):
         end_page = matched[i + 1][1] - 1 if i + 1 < len(matched) else total_pages - 1
-        clean_name = remove_date(name)
-        label = normalize_section_name(clean_name)
+        if end_page < start_page:
+            end_page = start_page  # Fix invalid range
+        label = normalize_section_name(name)
         result.append([1, label, start_page, end_page])
     return result
 
@@ -96,8 +87,8 @@ def merge_equity_research_sections(toc_list):
     merged = []
     i = 0
     while i < len(toc_list):
-        label_lower = toc_list[i][1].lower()
-        if label_lower == "equity research":
+        label = toc_list[i][1].lower()
+        if label == "equity research":
             merged_start = toc_list[i][2]
             i += 1
             merged_end = merged_start
@@ -114,7 +105,7 @@ def merge_adjacent_same_labels(toc_list):
     merged = []
     for entry in toc_list:
         if merged and merged[-1][1] == entry[1]:
-            merged[-1][3] = entry[3]  # update end page
+            merged[-1][3] = max(merged[-1][3], entry[3])  # Extend end page
         else:
             merged.append(entry)
     return merged
