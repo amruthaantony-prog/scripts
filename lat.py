@@ -107,18 +107,15 @@ def merge_equity_research_sections(toc_list):
         current = toc_list[i]
         label_lower = current[1].lower()
 
-        # Start of Equity Research block
         if label_lower == "equity research":
             equity_start = current[2]
             i += 1
-
             level2_brokers = []
             equity_end = equity_start
 
-            # Loop through broker reports
             while i < len(toc_list):
-                broker_label = toc_list[i][1].lower()
-                if any(b in broker_label for b in BROKER_NAMES):
+                # Check if current label matches any broker using normalized match
+                if any(normalize(b) in normalize(toc_list[i][1]) for b in BROKER_NAMES):
                     broker = toc_list[i]
                     level2_brokers.append([2, broker[1].strip().title(), broker[2], broker[3]])
                     equity_end = broker[3]
@@ -126,9 +123,7 @@ def merge_equity_research_sections(toc_list):
                 else:
                     break
 
-            # Add Level 1 Equity Research section
             merged.append([1, "Equity Research", equity_start, equity_end])
-            # Add Level 2 brokers
             merged.extend(level2_brokers)
 
         else:
