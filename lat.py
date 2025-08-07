@@ -120,42 +120,41 @@ BROKER_NAMES = [
 def merge_equity_research_sections(toc_list):
     merged = []
     i = 0
+    broker_block = []
 
     while i < len(toc_list):
-        current = toc_list[i]
-        label_lower = current[1].lower()
+        label = toc_list[i][1]
+        norm_label = normalize(label)
+        matched_broker = None
 
-        if label_lower == "equity research":
-            equity_start = current[2]
+        for b in BROKER_NAMES:
+            if normalize(b) in norm_label:
+                matched_broker = b.title()
+                break
+
+        if matched_broker:
+            broker_block.append([2, matched_broker, toc_list[i][2], toc_list[i][3]])
             i += 1
-            level2_brokers = []
-            equity_end = equity_start
-
-            while i < len(toc_list):
-                label = toc_list[i][1]
-                matched = False
-
-                for b in BROKER_NAMES:
-                    if normalize(b) in normalize(label):
-                        clean_broker_name = b.title()
-                        broker = toc_list[i]
-                        level2_brokers.append([2, clean_broker_name, broker[2], broker[3]])
-                        equity_end = broker[3]
-                        i += 1
-                        matched = True
-                        break
-
-                if not matched:
-                    break
-
-            merged.append([1, "Equity Research", equity_start, equity_end])
-            merged.extend(level2_brokers)
-
         else:
-            merged.append(current)
+            if broker_block:
+                # Insert Level 1 'Equity Research' wrapper before current item
+                start_page = broker_block[0][2]
+                end_page = broker_block[-1][3]
+                merged.append([1, "Equity Research", start_page, end_page])
+                merged.extend(broker_block)
+                broker_block = []
+            merged.append(toc_list[i])
             i += 1
+
+    # Edge case: if brokers are the last items
+    if broker_block:
+        start_page = broker_block[0][2]
+        end_page = broker_block[-1][3]
+        merged.append([1, "Equity Research", start_page, end_page])
+        merged.extend(broker_block)
 
     return merged
+
 
 def process_pdf(pdf_path):
     with fitz.open(pdf_path) as doc:
