@@ -25,14 +25,28 @@ def extract_toc_text(doc, toc_page):
     lines = reader.readtext(image_array, detail=0)
     return lines
 
+# def match_lines_to_links(toc_text, toc_links):
+#     matched = []
+#     for line in toc_text:
+#         for link in toc_links:
+#             if line.lower().strip() in link['text'].lower().strip():
+#                 matched.append([line.strip(), link['page']])
+#                 break
+#     return matched
 def match_lines_to_links(toc_text, toc_links):
     matched = []
     for line in toc_text:
+        stripped_line = line.strip()
+        if not stripped_line or len(stripped_line) < 4:  # Skip short lines
+            continue
+        if re.match(r"^[A-Da-d][\).]?$", stripped_line):  # Skip single-letter bullets
+            continue
         for link in toc_links:
-            if line.lower().strip() in link['text'].lower().strip():
-                matched.append([line.strip(), link['page']])
+            if stripped_line.lower() in link['text'].lower().strip():
+                matched.append((stripped_line, link["page"]))
                 break
     return matched
+
 
 def normalize_section_name(name):
     name = name.lower()
