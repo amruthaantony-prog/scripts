@@ -90,6 +90,25 @@ def build_final_toc(matched, total_pages):
         result.append([1, label, start_page, end_page])
     return result
 
+def merge_fragments(matched):
+    merged = []
+    skip_next = False
+    for i in range(len(matched)):
+        if skip_next:
+            skip_next = False
+            continue
+
+        current = matched[i]
+        if i + 1 < len(matched):
+            next_line = matched[i + 1]
+            if current[1] == next_line[1]:  # same page
+                combined_text = f"{current[0]} {next_line[0]}"
+                merged.append([combined_text, current[1]])
+                skip_next = True
+                continue
+
+        merged.append(list(current))
+    return merged
 
 def merge_equity_research_sections(toc_list):
     merged = []
