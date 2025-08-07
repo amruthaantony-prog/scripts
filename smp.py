@@ -1,8 +1,7 @@
 def find_toc_page(doc):
-    for page_num in range(min(3, len(doc))):  # Only first 3 pages
+    for page_num in range(min(3, len(doc))):
         page = doc.load_page(page_num)
-        links = page.get_links()
-        if len(links) > 5:
+        if len(page.get_links()) > 5:
             return page_num
     return 0
 
@@ -25,21 +24,17 @@ def extract_toc_text(doc, toc_page):
     lines = reader.readtext(image_array, detail=0)
     return lines
 
-# def match_lines_to_links(toc_text, toc_links):
-#     matched = []
-#     for line in toc_text:
-#         for link in toc_links:
-#             if line.lower().strip() in link['text'].lower().strip():
-#                 matched.append([line.strip(), link['page']])
-#                 break
-#     return matched
+def remove_date(text):
+    # Remove patterns like (Jan 29, 2025), (2025), etc.
+    return re.sub(r"\(\s*[^()]*\d{4}[^()]*\)", "", text).strip()
+
 def match_lines_to_links(toc_text, toc_links):
     matched = []
     for line in toc_text:
         stripped_line = line.strip()
-        if not stripped_line or len(stripped_line) < 4:  # Skip short lines
+        if not stripped_line or len(stripped_line) < 4:
             continue
-        if re.match(r"^[A-Da-d][\).]?$", stripped_line):  # Skip single-letter bullets
+        if re.match(r"^[A-Da-d][\).]?$", stripped_line):  # Skip bullets like a), A.
             continue
         for link in toc_links:
             if stripped_line.lower() in link['text'].lower().strip():
@@ -47,34 +42,26 @@ def match_lines_to_links(toc_text, toc_links):
                 break
     return matched
 
-
 def normalize_section_name(name):
     name = name.lower()
-    if any(x in name for x in ["10-k", "10-q", "form"]):
-        return "Forms"
-    elif "transcript" in name or "call" in name:
+    if any(x in name for x in ["transcript", "call"]):
         return "Earnings Transcript"
-    elif "press" in name or "presentation" in name:
-        return "Earnings Release"
+    elif any(x in name for x in ["press", "presentation", "release", "investor"]):
+        return "Earnings Release" if "investor" not in name else "Investor Presentation"
     elif "news" in name:
         return "Recent News"
     elif "equity" in name:
         return "Equity Research"
-    else:
-        return name.title()
+    return name.title()
 
 def build_final_toc(matched, total_pages):
     result = []
     for i, (name, start_page) in enumerate(matched):
         end_page = matched[i + 1][1] - 1 if i + 1 < len(matched) else total_pages - 1
-        label = normalize_section_name(name)
+        clean_name = remove_date(name)
+        label = normalize_section_name(clean_name)
         result.append([1, label, start_page, end_page])
     return result
-BROKER_NAMES = [
-    "jpmorgan", "morgan stanley", "nomura", "bnp paribas",
-    "bofa global research", "goldman sachs", "ubs", "barclays", "hsbc", "jefferies",
-    "credit suisse", "citigroup", "rbc", "evercore", "wells fargo"
-]
 
 def merge_equity_research_sections(toc_list):
     merged = []
@@ -94,7 +81,20 @@ def merge_equity_research_sections(toc_list):
             i += 1
     return merged
 
+def merge_adjacent_same_labels(toc_list):
+    merged = []
+    i = 0
+    while i < len(toc_list):
+        current = toc_list[i]
+        j = i + 1
+        while j < len(toc_list) and toc_list[j][1] == current[1]:
+            current[3] = toc_list[j][3]
+            j += 1
+        merged.append(current)
+        i = j
+    return merged
 
+# --- Main ---
 
 def process_pdf(pdf_path):
     with fitz.open(pdf_path) as doc:
@@ -103,4 +103,8 @@ def process_pdf(pdf_path):
         toc_links = extract_toc_links(doc, toc_page)
         toc_text = extract_toc_text(doc, toc_page)
         matched = match_lines_to_links(toc_text, toc_links)
-        return build_final_toc(matched, total_pages)
+
+        final = build_final_toc(matched, total_pages)
+        final = merge_equity_research_sections(final)
+        final = merge_adjacent_same_labels(final)  # Optional
+        return final
