@@ -114,13 +114,20 @@ def merge_equity_research_sections(toc_list):
             equity_end = equity_start
 
             while i < len(toc_list):
-                # Check if current label matches any broker using normalized match
-                if any(normalize(b) in normalize(toc_list[i][1]) for b in BROKER_NAMES):
-                    broker = toc_list[i]
-                    level2_brokers.append([2, broker[1].strip().title(), broker[2], broker[3]])
-                    equity_end = broker[3]
-                    i += 1
-                else:
+                label = toc_list[i][1]
+                matched = False
+
+                for b in BROKER_NAMES:
+                    if normalize(b) in normalize(label):
+                        clean_broker_name = b.title()
+                        broker = toc_list[i]
+                        level2_brokers.append([2, clean_broker_name, broker[2], broker[3]])
+                        equity_end = broker[3]
+                        i += 1
+                        matched = True
+                        break
+
+                if not matched:
                     break
 
             merged.append([1, "Equity Research", equity_start, equity_end])
