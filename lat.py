@@ -104,20 +104,26 @@ def merge_equity_research_sections(toc_list):
         current = toc_list[i]
         label_lower = current[1].lower()
 
+        # Start of Equity Research block
         if label_lower == "equity research":
             equity_start = current[2]
             i += 1
+
             level2_brokers = []
             equity_end = equity_start
 
-            # Collect broker sections until the next Level 1 section or end
-            while i < len(toc_list) and toc_list[i][0] == 1 and any(b in toc_list[i][1].lower() for b in BROKER_NAMES):
-                broker = toc_list[i]
-                level2_brokers.append([2, broker[1].title(), broker[2], broker[3]])
-                equity_end = broker[3]
-                i += 1
+            # Loop through broker reports
+            while i < len(toc_list):
+                broker_label = toc_list[i][1].lower()
+                if any(b in broker_label for b in BROKER_NAMES):
+                    broker = toc_list[i]
+                    level2_brokers.append([2, broker[1].strip().title(), broker[2], broker[3]])
+                    equity_end = broker[3]
+                    i += 1
+                else:
+                    break
 
-            # Add Equity Research Level 1
+            # Add Level 1 Equity Research section
             merged.append([1, "Equity Research", equity_start, equity_end])
             # Add Level 2 brokers
             merged.extend(level2_brokers)
@@ -127,7 +133,6 @@ def merge_equity_research_sections(toc_list):
             i += 1
 
     return merged
-
 
 def process_pdf(pdf_path):
     with fitz.open(pdf_path) as doc:
