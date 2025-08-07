@@ -33,6 +33,17 @@ def extract_toc_text(doc, toc_page):
     lines = reader.readtext(image_array, detail=0)
     return lines
 
+# def clean_toc_line(line):
+#     stripped = line.strip()
+#     if not stripped or len(stripped) < 4:
+#         return None
+#     if re.match(r"^[A-Da-d][\).]?$", stripped):
+#         return None
+
+#     # Remove common date patterns like (Mar 12, 2025), Feb 2025, etc.
+#     stripped = re.sub(r"\(?\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2} \w+ \d{4}|\w+ \d{1,2}, \d{4}|\w+ \d{4}|\d{4})\b\)?", "", stripped)
+#     stripped = re.sub(r"\s{2,}", " ", stripped).strip()  # remove extra spaces
+#     return stripped if len(stripped) >= 4 else None
 def clean_toc_line(line):
     stripped = line.strip()
     if not stripped or len(stripped) < 4:
@@ -40,10 +51,17 @@ def clean_toc_line(line):
     if re.match(r"^[A-Da-d][\).]?$", stripped):
         return None
 
-    # Remove common date patterns like (Mar 12, 2025), Feb 2025, etc.
-    stripped = re.sub(r"\(?\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2} \w+ \d{4}|\w+ \d{1,2}, \d{4}|\w+ \d{4}|\d{4})\b\)?", "", stripped)
-    stripped = re.sub(r"\s{2,}", " ", stripped).strip()  # remove extra spaces
+    # Remove parenthetical date expressions
+    stripped = re.sub(r"\(?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d{1,2},? ?\d{0,4}\)?", "", stripped, flags=re.IGNORECASE)
+
+    # Remove trailing empty brackets (e.g. leftover "()")
+    stripped = re.sub(r"\(\s*\)", "", stripped)
+
+    # Remove multiple spaces
+    stripped = re.sub(r"\s{2,}", " ", stripped).strip()
+
     return stripped if len(stripped) >= 4 else None
+
 
 
 def match_lines_to_links(toc_text, toc_links):
