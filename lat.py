@@ -39,9 +39,12 @@ def clean_toc_line(line):
         return None
     if re.match(r"^[A-Da-d][\).]?$", stripped):
         return None
-    if re.search(r"\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4})\b", stripped):  # Dates like 01/01/2023 or 2023
-        return None
-    return stripped
+
+    # Remove common date patterns like (Mar 12, 2025), Feb 2025, etc.
+    stripped = re.sub(r"\(?\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2} \w+ \d{4}|\w+ \d{1,2}, \d{4}|\w+ \d{4}|\d{4})\b\)?", "", stripped)
+    stripped = re.sub(r"\s{2,}", " ", stripped).strip()  # remove extra spaces
+    return stripped if len(stripped) >= 4 else None
+
 
 def match_lines_to_links(toc_text, toc_links):
     matched = []
