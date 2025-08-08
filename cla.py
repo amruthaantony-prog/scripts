@@ -1,3 +1,26 @@
+
+import re
+
+def clean_toc_line(line):
+    if not line or len(line.strip()) < 4:
+        return None
+
+    stripped = line.strip()
+
+    # Remove common date patterns
+    stripped = re.sub(r"\b(20\d{2}[.\-/]\d{2}[.\-/]?\d{0,2})\b", "", stripped)      # 2024.04.23, 2024-04-23, 2024/04/23
+    stripped = re.sub(r"\b(Q[1-4]\s*20\d{2})\b", "", stripped, flags=re.IGNORECASE) # Q1 2024
+    stripped = re.sub(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\b", "", stripped, flags=re.IGNORECASE)  # Jan 2024
+    stripped = re.sub(r"\b(20\d{2})\b", "", stripped)                                # 2025
+    stripped = re.sub(r"\(\s*[^)]*\s*\)", "", stripped)                              # Remove anything in brackets like (12.31.2024)
+    stripped = re.sub(r"\[\s*[^]]*\s*\]", "", stripped)                              # Remove anything in square brackets
+
+    # Remove extra spaces and punctuation-only lines
+    stripped = re.sub(r"\s+", " ", stripped).strip()
+    if len(stripped) < 4 or re.match(r"^[^\w]*$", stripped):
+        return None
+
+    return stripped
 import fitz
 import numpy as np
 import re
