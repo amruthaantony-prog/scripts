@@ -1,4 +1,46 @@
-
+def match_lines_to_links(toc_text, toc_links):
+    matched = []
+    
+    # Clean both toc_text and toc_links using the same function
+    cleaned_toc_text = []
+    for line in toc_text:
+        cleaned = clean_toc_line(line)
+        if cleaned:
+            cleaned_toc_text.append(cleaned)
+    
+    cleaned_toc_links = []
+    for link in toc_links:
+        # Clean the link text the same way
+        cleaned_link_text = clean_toc_line(link['text'])
+        if cleaned_link_text:
+            cleaned_toc_links.append({
+                'text': cleaned_link_text,
+                'page': link['page'],
+                'original_text': link['text']  # Keep original for reference
+            })
+    
+    print("=== CLEANED TOC TEXT ===")
+    for i, text in enumerate(cleaned_toc_text):
+        print(f"{i}: '{text}'")
+    
+    print("\n=== CLEANED TOC LINKS ===")
+    for i, link in enumerate(cleaned_toc_links):
+        print(f"{i}: '{link['text']}' (page {link['page']})")
+    
+    # Now match cleaned text with cleaned links
+    print("\n=== MATCHING ===")
+    for toc_line in cleaned_toc_text:
+        for link in cleaned_toc_links:
+            if toc_line.lower() == link['text'].lower():
+                print(f"EXACT MATCH: '{toc_line}' -> page {link['page']}")
+                matched.append((toc_line, link['page']))
+                break
+            elif toc_line.lower() in link['text'].lower() or link['text'].lower() in toc_line.lower():
+                print(f"PARTIAL MATCH: '{toc_line}' <-> '{link['text']}' -> page {link['page']}")
+                matched.append((toc_line, link['page']))
+                break
+    
+    return matched
 import re
 
 def clean_toc_line(line):
