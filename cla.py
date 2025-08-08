@@ -1,3 +1,46 @@
+def merge_equity_research_sections(toc, broker_keywords=None):
+    if broker_keywords is None:
+        broker_keywords = BROKER_KEYWORDS
+
+    broker_sections = []
+    non_broker_sections = []
+
+    for entry in toc:
+        name = entry[1].lower()
+        if any(b in name for b in broker_keywords):
+            broker_sections.append(entry)
+        else:
+            non_broker_sections.append(entry)
+
+    if not broker_sections:
+        return toc  # no changes
+
+    # Determine start and end page range
+    start_page = min(item[2] for item in broker_sections)
+    end_page = max(item[3] for item in broker_sections)
+
+    # Create grouped section
+    grouped = [[1, "Equity Research", start_page, end_page]]
+
+    # Promote individual brokers as Level 2
+    brokers_l2 = []
+    for b in broker_sections:
+        brokers_l2.append([2, b[1], b[2], b[3]])
+
+    # Reinsert in correct order
+    final = []
+    inserted = False
+    for section in non_broker_sections:
+        if not inserted and section[2] > start_page:
+            final.extend(grouped + brokers_l2)
+            inserted = True
+        final.append(section)
+
+    if not inserted:
+        final.extend(grouped + brokers_l2)
+
+    return final
+
 def clean_toc_line(line: str):
     if not line:
         return None
