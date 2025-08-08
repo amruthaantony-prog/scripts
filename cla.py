@@ -1,4 +1,24 @@
+def clean_toc_line(line: str):
+    if not line:
+        return None
+    stripped = line.strip()
 
+    # Remove numbering/bullet like i., 1., ii., etc.
+    stripped = re.sub(r'^[ivxlc\d]+\.\s*', '', stripped, flags=re.IGNORECASE)
+
+    # Remove line breaks
+    stripped = stripped.replace('\n', ' ')
+
+    # Remove dates like "2024.06.04", "2024-04-23", etc.
+    stripped = re.sub(r'\d{4}[./-]\d{2}[./-]\d{2}', '', stripped)
+
+    # Remove bracketed items like "(June 2024)" or "(2024)"
+    stripped = re.sub(r'\(([^)]*)\)', '', stripped)
+
+    # Remove extra spaces
+    stripped = re.sub(r'\s+', ' ', stripped).strip()
+
+    return stripped if stripped else None
 def match_lines_to_links(toc_text, toc_links):
     matched = []
     
