@@ -1,39 +1,116 @@
-def merge_equity_research_sections(toc, broker_keywords=None):
-    if broker_keywords is None:
-        broker_keywords = BROKER_KEYWORDS
 
-    broker_sections = []
-    non_broker_sections = []
+def match_lines_to_links(toc_text, toc_links, BROKER_KEYWORDS):
+    matched = []
+    
+    # Clean both sides
+    cleaned_toc_text = []
+    for line in toc_text:
+        cleaned = clean_toc_line(line)
+        if cleaned:
+            cleaned_toc_text.append(cleaned)
+    
+    cleaned_toc_links = []
+    for link in toc_links:
+        cleaned_link_text = clean_toc_line(link['text'])
+        if cleaned_link_text:
+            cleaned_toc_links.append({
+                'text': cleaned_link_text,
+                'page': link['page'],
+                'original_text': link['text']
+            })
+    
+    # Match with stricter criteria
+    best_match = None
+    best_score = 0
+    
+    for link in cleaned_toc_links:
+        # Skip if already matched
+        if any(link['page'] == x[1] for x in matched):
+            continue
+        
+        toc_line = None
+        link_lower = link['text'].lower().strip()
+        
+        # Is broken line - only do the lower() to toc_lower for p in matched:
+        # if is_broken_line or any(p to toc_lower for p in BROKER_KEYWORDS):
+        #     continue
+        
+        link_lower = link['text'].lower().strip()
+        
+        # Exact match gets highest priority
+        for toc_line_candidate in cleaned_toc_text:
+            toc_lower = toc_line_candidate.lower().strip()
+            
+            if toc_lower == link_lower:
+                best_match = (toc_line_candidate, link['page'])
+                best_score = 1000  # Highest possible score
+                break
+        
+        if best_match and best_score == 1000:
+            break
+            
+        # Broker keyword matches get high priority
+        for toc_line_candidate in cleaned_toc_text:
+            toc_lower = toc_line_candidate.lower().strip()
+            toc_words = set(toc_lower.split())
+            link_words = set(link_lower.split())
+            
+            # Check if any broker keyword appears in both
+            broker_match = False
+            for keyword in BROKER_KEYWORDS:
+                if keyword.lower() in toc_lower and keyword.lower() in link_lower:
+                    broker_match = True
+                    break
+            
+            if broker_match:
+                # Calculate overlap score for broker matches
+                common_words = toc_words & link_words
+                if len(common_words) > 0:
+                    overlap_ratio = len(common_words) / max(len(toc_words), len(link_words))
+                    score = 800 + (overlap_ratio * 100)  # High base score for broker matches
+                    
+                    if score > best_score:
+                        best_match = (toc_line_candidate, link['page'])
+                        best_score = score
+        
+        # Regular partial matches (lower priority)
+        if best_score < 700:  # Only if no good broker/exact match found
+            for toc_line_candidate in cleaned_toc_text:
+                toc_lower = toc_line_candidate.lower().strip()
+                toc_words = set(toc_lower.split())
+                link_words = set(link_lower.split())
+                
+                # Skip single character words and common words
+                toc_words = {w for w in toc_words if len(w) > 2 and w not in ['the', 'and', 'of', 'to', 'for']}
+                link_words = {w for w in link_words if len(w) > 2 and w not in ['the', 'and', 'of', 'to', 'for']}
+                
+                if len(toc_words) == 0 or len(link_words) == 0:
+                    continue
+                
+                common_words = toc_words & link_words
+                if len(common_words) > 0:
+                    # Calculate score based on word overlap
+                    overlap_ratio = len(common_words) / len(toc_words | link_words)
+                    score = len(common_words) * 100 + overlap_ratio * 200
+                    
+                    # Bonus for more words matching
+                    if len(common_words) >= 2:
+                        score += 100
+                    
+                    if score > best_score and score > 150:  # Minimum threshold
+                        best_match = (toc_line_candidate, link['page'])
+                        best_score = score
+    
+    if best_match:
+        matched.append(best_match)
+        print(f"Matched: '{best_match[0]}' -> page {best_match[1]} (score: {best_score})")
+    else:
+        print("No match found")
+    
+    return matched
 
-    for entry in toc:
-        name = entry[1].lower()
-        if any(b in name for b in broker_keywords):
-            broker_sections.append(entry)
-        else:
-            non_broker_sections.append(entry)
 
-    if not broker_sections:
-        return toc  # no changes
-
-    # Determine start and end page range
-    start_page = min(item[2] for item in broker_sections)
-    end_page = max(item[3] for item in broker_sections)
-
-    # Create grouped section
-    grouped = [[1, "Equity Research", start_page, end_page]]
-
-    # Promote individual brokers as Level 2
-    brokers_l2 = []
-    for b in broker_sections:
-        brokers_l2.append([2, b[1], b[2], b[3]])
-
-    # Reinsert in correct order
-    final = []
-    inserted = False
-    for section in non_broker_sections:
-        if not inserted and section[2] > start_page:
-            final.extend(grouped + brokers_l2)
-            inserted = True
+rted = True
         final.append(section)
 
     if not inserted:
