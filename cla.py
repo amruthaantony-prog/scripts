@@ -1,7 +1,8 @@
+
 def match_lines_to_links(toc_text, toc_links):
     matched = []
     
-    # Clean both toc_text and toc_links using the same function
+    # Clean both sides
     cleaned_toc_text = []
     for line in toc_text:
         cleaned = clean_toc_line(line)
@@ -10,37 +11,56 @@ def match_lines_to_links(toc_text, toc_links):
     
     cleaned_toc_links = []
     for link in toc_links:
-        # Clean the link text the same way
         cleaned_link_text = clean_toc_line(link['text'])
         if cleaned_link_text:
             cleaned_toc_links.append({
                 'text': cleaned_link_text,
                 'page': link['page'],
-                'original_text': link['text']  # Keep original for reference
+                'original_text': link['text']
             })
     
-    print("=== CLEANED TOC TEXT ===")
-    for i, text in enumerate(cleaned_toc_text):
-        print(f"{i}: '{text}'")
-    
-    print("\n=== CLEANED TOC LINKS ===")
-    for i, link in enumerate(cleaned_toc_links):
-        print(f"{i}: '{link['text']}' (page {link['page']})")
-    
-    # Now match cleaned text with cleaned links
-    print("\n=== MATCHING ===")
+    # Match with stricter criteria
     for toc_line in cleaned_toc_text:
+        best_match = None
+        best_score = 0
+        
         for link in cleaned_toc_links:
-            if toc_line.lower() == link['text'].lower():
-                print(f"EXACT MATCH: '{toc_line}' -> page {link['page']}")
-                matched.append((toc_line, link['page']))
+            # Skip if already matched
+            if any(link['page'] == m[1] for m in matched):
+                continue
+                
+            toc_lower = toc_line.lower().strip()
+            link_lower = link['text'].lower().strip()
+            
+            # Exact match gets highest priority
+            if toc_lower == link_lower:
+                best_match = (toc_line, link['page'])
+                best_score = 100
                 break
-            elif toc_line.lower() in link['text'].lower() or link['text'].lower() in toc_line.lower():
-                print(f"PARTIAL MATCH: '{toc_line}' <-> '{link['text']}' -> page {link['page']}")
-                matched.append((toc_line, link['page']))
-                break
+            
+            # Avoid partial matches with just "bofa", "securities", etc.
+            # Only allow partial matches if substantial overlap
+            toc_words = set(toc_lower.split())
+            link_words = set(link_lower.split())
+            
+            # Skip single word matches for these problematic terms
+            if len(toc_words) == 1 and toc_lower in ['bofa', 'securities', 'ubs']:
+                continue
+                
+            # Calculate word overlap
+            common_words = toc_words.intersection(link_words)
+            if len(common_words) >= 2:  # At least 2 words in common
+                score = len(common_words) / max(len(toc_words), len(link_words))
+                if score > best_score:
+                    best_match = (toc_line, link['page'])
+                    best_score = score
+        
+        if best_match:
+            matched.append(best_match)
+            print(f"MATCH: '{best_match[0]}' -> page {best_match[1]}")
     
     return matched
+
 import re
 
 def clean_toc_line(line):
