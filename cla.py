@@ -1,4 +1,129 @@
-
+def match_lines_to_links(toc_text, toc_links, BROKER_KEYWORDS):
+    matched = []
+    
+    # Clean both sides
+    cleaned_toc_text = []
+    for line in toc_text:
+        cleaned = clean_toc_line(line)
+        if cleaned:
+            cleaned_toc_text.append(cleaned)
+    
+    cleaned_toc_links = []
+    for link in toc_links:
+        cleaned_link_text = clean_toc_line(link['text'])
+        if cleaned_link_text:
+            cleaned_toc_links.append({
+                'text': cleaned_link_text,
+                'page': link['page'],
+                'original_text': link['text']
+            })
+    
+    # FIRST PASS: Handle broker keywords with high priority
+    for toc_line in cleaned_toc_text:
+        toc_lower = toc_line.lower().strip()
+        
+        # Check if this TOC line contains any broker keyword
+        is_broker_line = False
+        for keyword in BROKER_KEYWORDS:
+            if keyword.lower() in toc_lower:
+                is_broker_line = True
+                break
+        
+        if not is_broker_line:
+            continue
+            
+        best_match = None
+        best_score = 0
+        
+        for link in cleaned_toc_links:
+            # Skip if already matched
+            if any(link['page'] == x[1] for x in matched):
+                continue
+                
+            link_lower = link['text'].lower().strip()
+            
+            # Check if link contains the same broker keyword
+            broker_match = False
+            for keyword in BROKER_KEYWORDS:
+                if keyword.lower() in toc_lower and keyword.lower() in link_lower:
+                    broker_match = True
+                    break
+            
+            if broker_match:
+                # Calculate overlap score
+                toc_words = set(toc_lower.split())
+                link_words = set(link_lower.split())
+                common_words = toc_words & link_words
+                
+                if len(common_words) > 0:
+                    score = len(common_words) * 100
+                    if score > best_score:
+                        best_match = (toc_line, link['page'])
+                        best_score = score
+        
+        if best_match:
+            matched.append(best_match)
+            print(f"Broker match: '{best_match[0]}' -> page {best_match[1]} (score: {best_score})")
+    
+    # SECOND PASS: Handle remaining non-broker matches (your original logic)
+    best_match = None
+    best_score = 0
+    
+    for link in cleaned_toc_links:
+        # Skip if already matched
+        if any(link['page'] == x[1] for x in matched):
+            continue
+        
+        toc_line = None
+        link_lower = link['text'].lower().strip()
+        
+        # Skip if this is a broker keyword link (already handled above)
+        is_broker_link = False
+        for keyword in BROKER_KEYWORDS:
+            if keyword.lower() in link_lower:
+                is_broker_link = True
+                break
+        if is_broker_link:
+            continue
+        
+        for toc_line_candidate in cleaned_toc_text:
+            toc_lower = toc_line_candidate.lower().strip()
+            
+            # Skip if this TOC line was already matched
+            if any(toc_line_candidate == x[0] for x in matched):
+                continue
+            
+            # Exact match gets highest priority
+            if toc_lower == link_lower:
+                best_match = (toc_line_candidate, link['page'])
+                best_score = 100
+                break
+            
+            # Partial matches
+            toc_words = set(toc_lower.split())
+            link_words = set(link_lower.split())
+            
+            # Skip single word matches for problematic terms
+            if len(toc_words) == 1 and toc_lower in ['roth', 'securities', 'wells']:
+                continue
+            
+            common_words = toc_words & link_words
+            if len(common_words) > 0:
+                score = len(common_words)
+                if len(common_words) >= 2:
+                    score *= 2
+                
+                if score > best_score:
+                    best_match = (toc_line_candidate, link['page'])
+                    best_score = score
+    
+    if best_match:
+        matched.append(best_match)
+        print(f"Regular match: '{best_match[0]}' -> page {best_match[1]} (score: {best_score})")
+    else:
+        print("No additional matches found")
+    
+    return matched
 def match_lines_to_links(toc_text, toc_links, BROKER_KEYWORDS):
     matched = []
     
