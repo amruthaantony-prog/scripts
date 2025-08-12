@@ -1,3 +1,17 @@
+
+BROKER_NAMES = [
+    "JPMorgan", "Morgan Stanley", "Nomura", "BNP Paribas", "BofA Global Research",
+    "Goldman Sachs", "UBS Equities", "Barclays", "HSBC", "Jefferies", "Credit Suisse",
+    "Citigroup", "RBC Capital Markets", "Evercore", "Wells Fargo Securities",
+    "Oppenheimer & Co", "Scotiabank", "William Blair", "Deutsche Bank"
+]
+
+CREDIT_SOURCES = ["Moody's", "S&P", "Fitch"]
+
+# later in process_pdf(...)
+matched = match_lines_to_links(toc_text, toc_links, BROKER_NAMES, CREDIT_SOURCES)
+
+
 import re
 from typing import List, Tuple, Dict, Iterable
 
