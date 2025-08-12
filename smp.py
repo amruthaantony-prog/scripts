@@ -1,123 +1,78 @@
-import fitz
-import numpy as np
-import re
-
-# BROKER list for Equity Research grouping
-BROKER_NAMES = [
-    "jpmorgan", "morgan stanley", "nomura", "bnp paribas",
-    "bofa global research", "goldman sachs", "ubs", "barclays", "hsbc", "jefferies",
-    "credit suisse", "citigroup", "rbc", "evercore", "wells fargo", "oppenheimer",
-    "scotiabank", "william blair", "deutsche bank"
+CREDIT_SOURCES = [
+    "moody", "moody's", "moodys",
+    "s&p", "s & p", "standard & poor's", "standard and poor's", "sandp", "snp",
+    "s&p global ratings", "s&p global"
 ]
 
-def find_toc_page(doc):
-    for page_num in range(min(3, len(doc))):
-        page = doc.load_page(page_num)
-        links = page.get_links()
-        if len(links) > 5:
-            return page_num
-    return 0
-
-def extract_toc_links(doc, toc_page):
-    toc_links = []
-    page = doc.load_page(toc_page)
-    for link in page.get_links():
-        if "page" in link:
-            text = page.get_textbox(link.get("from")) or ""
-            toc_links.append({
-                "text": text.strip(),
-                "page": int(link["page"])
-            })
-    return toc_links
-
-def extract_toc_text(doc, toc_page):
-    page = doc.load_page(toc_page)
-    pix = page.get_pixmap(dpi=500)
-    image_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-    lines = reader.readtext(image_array, detail=0)
-    return lines
-
-def strip_dates(text):
-    return re.sub(r'\(?\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[^\)]*\)?', '', text).strip()
-
-def match_lines_to_links(toc_text, toc_links):
-    matched = []
-    for line in toc_text:
-        stripped_line = line.strip()
-        if not stripped_line or len(stripped_line) < 4:
-            continue
-        if re.match(r"^[A-Da-d][\).]?$", stripped_line):
-            continue
-        cleaned_line = strip_dates(stripped_line.lower())
-        for link in toc_links:
-            link_text = strip_dates(link['text'].lower())
-            if cleaned_line in link_text:
-                matched.append((stripped_line, link["page"]))
-                break
-    return matched
-
+def canonicalize_credit_label(name: str) -> str:
+    n = re.sub(r"[^a-z0-9]+", "", name.lower())
+    if n.startswith("moody"):    return "Moody’s"
+    if n.startswith("sp") or n.startswith("sandp") or n.startswith("standardandpoors"): 
+        return "S&P"
+    return name.strip().title()
 def normalize_section_name(name):
     lowered = name.lower()
 
-    if "investor" in lowered:
-        return "Investor Presentation"
-    if "transcript" in lowered or "call" in lowered:
-        return "Earnings Transcript"
-    if "press" in lowered or "presentation" in lowered:
-        return "Earnings Release"
-    if "news" in lowered:
-        return "Recent News"
-    if "equity" in lowered:
-        return "Equity Research"
-    if "form" in lowered:  # Preserve Forms section naming
-        return name.strip()
-    return name.title()
+    # …your other rules…
 
-def build_final_toc(matched, total_pages):
-    result = []
-    for i, (name, start_page) in enumerate(matched):
-        end_page = matched[i + 1][1] - 1 if i + 1 < len(matched) else total_pages - 1
-        if end_page < start_page:
-            end_page = start_page  # Fix invalid range
-        label = normalize_section_name(name)
-        result.append([1, label, start_page, end_page])
-    return result
+    # If it's a generic credit heading, map to Credit Reports.
+    # If it's a specific source (Moody’s / S&P), leave it to be grouped later.
+    if "credit" in lowered and "report" in lowered:
+        if any(k in lowered for k in ["moody", "s&p", "standard & poor", "standard and poor"]):
+            return canonicalize_credit_label(name)   # keep source
+        return "Credit Reports"
 
-def merge_equity_research_sections(toc_list):
-    merged = []
-    i = 0
-    while i < len(toc_list):
-        label = toc_list[i][1].lower()
-        if label == "equity research":
-            merged_start = toc_list[i][2]
-            i += 1
-            merged_end = merged_start
-            while i < len(toc_list) and any(broker in toc_list[i][1].lower() for broker in BROKER_NAMES):
-                merged_end = toc_list[i][3]
-                i += 1
-            merged.append([1, "Equity Research", merged_start, merged_end])
+    return lowered.strip().title()
+
+
+def is_source(label: str, keywords) -> bool:
+    nn = re.sub(r"[^a-z0-9]+", "", label.lower())
+    for k in keywords:
+        nk = re.sub(r"[^a-z0-9]+", "", k.lower())
+        if nn == nk or nn.startswith(nk) or nk.startswith(nn):
+            return True
+    return False
+
+def merge_credit_reports_sections(toc, credit_keywords=None):
+    if credit_keywords is None:
+        credit_keywords = CREDIT_SOURCES
+
+    credit_sections = []
+    non_credit = []
+
+    for entry in toc:  # [level, label, start, end]
+        if is_source(entry[1], credit_keywords):
+            credit_sections.append(entry)
         else:
-            merged.append(toc_list[i])
-            i += 1
-    return merged
+            non_credit.append(entry)
 
-def merge_adjacent_same_labels(toc_list):
-    merged = []
-    for entry in toc_list:
-        if merged and merged[-1][1] == entry[1]:
-            merged[-1][3] = max(merged[-1][3], entry[3])  # Extend end page
-        else:
-            merged.append(entry)
-    return merged
+    if not credit_sections:
+        return toc
 
-def process_pdf(pdf_path):
-    with fitz.open(pdf_path) as doc:
-        total_pages = len(doc)
-        toc_page = find_toc_page(doc)
-        toc_links = extract_toc_links(doc, toc_page)
-        toc_text = extract_toc_text(doc, toc_page)
-        matched = match_lines_to_links(toc_text, toc_links)
-        final = build_final_toc(matched, total_pages)
-        final = merge_equity_research_sections(final)
-        final = merge_adjacent_same_labels(final)
-        return final
+    # keep page order
+    credit_sections.sort(key=lambda x: x[2])
+    start_page = min(x[2] for x in credit_sections)
+    end_page   = max(x[3] for x in credit_sections)
+
+    # level 1 container
+    grouped = [1, "Credit Reports", start_page, end_page]
+
+    # level 2 children (canonicalized names)
+    children = [[2, canonicalize_credit_label(c[1]), c[2], c[3]] for c in credit_sections]
+
+    # reinsert in order before first section that starts after the block
+    final = []
+    inserted = False
+    for section in non_credit:
+        if not inserted and section[2] > start_page:
+            final.append(grouped)
+            final.extend(children)
+            inserted = True
+        final.append(section)
+    if not inserted:
+        final.append(grouped)
+        final.extend(children)
+
+    # ensure global order
+    final.sort(key=lambda x: x[2])
+    return final
