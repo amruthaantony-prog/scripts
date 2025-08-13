@@ -1,3 +1,11 @@
+def _norm(s):
+    return re.sub(r'[^a-z0-9]+', '', s.lower())
+
+def _is_target(name):
+    n = _norm(name)
+    return ('10k' in n) or ('equityresearch' in n)
+
+
 def _find_target_range(toc):
     ranges = []
     for lvl, name, start, end in toc:
