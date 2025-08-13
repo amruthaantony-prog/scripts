@@ -1,17 +1,23 @@
-def _norm(s):
-    return re.sub(r'[^a-z0-9]+', '', s.lower())
-
-def _is_target(name):
+import re
+def _norm(s): return re.sub(r'[^a-z0-9]+', '', str(s).lower())
+def _is_target(name):   # adjust as needed
     n = _norm(name)
-    return ('10k' in n) or ('equityresearch' in n)
+    return '10k' in n or '10q' in n or 'equityresearch' in n
 
-
-def _find_target_range(toc):
+def _find_target_ranges(tocs):
     ranges = []
-    for lvl, name, start, end in toc:
-        if _is_target(name):
-            ranges.append((int(start), int(end)))
-    return ranges  # can be multiple ranges
+    for i, item in enumerate(tocs):
+        # accept only list/tuple with at least 4 fields: [level, name, start, end]
+        if not isinstance(item, (list, tuple)) or len(item) < 4:
+            # skip dicts/short rows quietly (or log if you want)
+            continue
+        _, name, start, end = item[:4]
+        try:
+            if _is_target(name):
+                ranges.append((int(start), int(end)))
+        except Exception:
+            continue
+    return ranges
 
 target_ranges = _find_target_range(tocs)
 
