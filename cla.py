@@ -1,4 +1,39 @@
 import re
+
+_WORD = re.compile(r"[A-Za-z]{2,}")
+_UESC = re.compile(r"\\u[0-9a-fA-F]{4}")              # \uXXXX runs
+_HEX_PAREN_RUN = re.compile(r"(?:\([0-9A-Fa-f:]{2,}\)){8,}")  # (…) repeated many times
+
+def looks_like_garbage(s: str) -> bool:
+    if not s:
+        return True
+    n = len(s)
+    ascii_letters = sum(ch.isalpha() and ord(ch) < 128 for ch in s)
+    words = len(_WORD.findall(s))
+    non_ascii = sum(ord(ch) >= 128 for ch in s)
+    punct_ratio = sum(ch in "{}[]():;|\\/" for ch in s) / n
+    unique_ratio = len(set(s)) / n
+    uesc_hits = len(_UESC.findall(s))
+    hexparen = bool(_HEX_PAREN_RUN.search(s))
+
+    # triggers
+    if words < 5 and ascii_letters < 30:            # almost no linguistic content
+        return True
+    if non_ascii / n > 0.50:                        # mostly non-ASCII
+        return True
+    if punct_ratio > 0.25 and ascii_letters / n < 0.05:
+        return True
+    if uesc_hits > 50 or hexparen:                  # long \uXXXX or (..) hex runs
+        return True
+    if unique_ratio < 0.05:                         # same chars over and over
+        return True
+    return False
+
+
+
+
+
+import re
 def _norm(s): return re.sub(r'[^a-z0-9]+', '', str(s).lower())
 def _is_target(name):   # adjust as needed
     n = _norm(name)
