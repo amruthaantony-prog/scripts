@@ -1,20 +1,10 @@
-import ghostscript
-import sys
+import fitz  # PyMuPDF
 
-input_pdf = "american.pdf"
-output_pdf = "american_fixed.pdf"
+pdf_path = "american_fixed.pdf"
+doc = fitz.open(pdf_path)
 
-args = [
-    "ps2pdf",   # program name, not used
-    "-dNOPAUSE",
-    "-dBATCH",
-    "-sDEVICE=pdfwrite",
-    "-dPDFSETTINGS=/prepress",
-    f"-sOutputFile={output_pdf}",
-    input_pdf
-]
-
-# ghostscript expects arguments as bytes
-ghostscript.Ghostscript(*map(str.encode, args))
-
-print(f"Fixed PDF saved as {output_pdf}")
+for i, page in enumerate(doc):
+    try:
+        text = page.get_text("text")
+    except Exception as e:
+        print(f"Page {i} failed with: {e}")
