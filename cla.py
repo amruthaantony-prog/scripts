@@ -1,28 +1,13 @@
-import fitz  # PyMuPDF
-
-def check_pdf_render_errors(pdf_path, dpi=100):
-    """
-    Try to render every page of a PDF to detect invalid float/grey color issues.
-    Returns a dict: {page_number: "ok" | error_message}
-    """
-    doc = fitz.open(pdf_path)
-    results = {}
-
-    for i, page in enumerate(doc):
-        pno = i + 1  # 1-based page numbers
-        try:
-            # Force rasterization: this is where the original grey color issue appeared
-            _ = page.get_pixmap(dpi=dpi)
-            results[pno] = "ok"
-        except Exception as e:
-            results[pno] = str(e)
-
-    return results
-
-
-# Example usage
-pdf_path = "american_fixed.pdf"
-results = check_pdf_render_errors(pdf_path)
-
-for pno, status in results.items():
-    print(f"Page {pno}: {status}")
+from spellchecker import SpellChecker
+spell = SpellChecker(language='en')
+text = "Th1s iz a tezt"
+corrected_words = []
+for word in text.split():
+    # Only attempt correction if the word is not in the dictionary
+    if word.lower() not in spell:
+        suggestion = spell.correction(word)
+        corrected_words.append(suggestion if suggestion else word)
+    else:
+        corrected_words.append(word)
+corrected_text = " ".join(corrected_words)
+print(corrected_text)  # "This is a text"
