@@ -1,42 +1,82 @@
-def extract_toc_links(doc, toc_page):
-    page = doc.load_page(toc_page)
-    toc_links = []
+# two_gpu_half_split_easyocr.py
+import os
+import multiprocessing as mp
 
-    # Pre-read all lines on the page so we can use them if get_textbox() is empty
-    words = page.get_text("words")
-    words.sort(key=lambda w: (w[1], w[0]))  # sort by y0, then x0
-    lines = []
-    cur = []
-    cur_y = None
-    for w in words:
-        x0, y0, x1, y1, txt, *_ = w
-        yc = (y0 + y1) / 2
-        if cur and abs(yc - cur_y) > 2.0:  # new line
-            lines.append({"text": " ".join(t[4] for t in cur), "y": cur_y})
-            cur = []
-        cur.append(w)
-        cur_y = yc
-    if cur:
-        lines.append({"text": " ".join(t[4] for t in cur), "y": cur_y})
+def _worker(gpu_id, pages_subset, global_indices, opts, out_q):
+    # Bind before importing EasyOCR
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    import easyocr
 
-    # Go through all links
-    for link in page.get_links():
-        if "page" not in link:
-            continue
+    reader = easyocr.Reader(
+        opts.get("langs", ["en"]),
+        gpu=True,
+        model_storage_directory=opts.get("model_storage_directory"),
+        download_enabled=opts.get("download_enabled", False),
+        quantize=opts.get("quantize", False),
+        verbose=opts.get("verbose", False),
+    )
 
-        # Try normal way first
-        text = page.get_textbox(link.get("from")) or ""
+    results = []
+    for gi, page in zip(global_indices, pages_subset):
+        txt = reader.readtext(page, detail=0, paragraph=False)
+        results.append((gi, txt))
+    out_q.put(results)
 
-        if not text.strip():
-            # Fallback: find nearest line vertically
-            rect = link.get("from")
-            link_y = (rect.y0 + rect.y1) / 2
-            nearest = min(lines, key=lambda l: abs(l["y"] - link_y))
-            text = nearest["text"]
+def run_two_readers_half_split(pages, opts=None):
+    """
+    Always launches two readers: GPU0 and GPU1.
+    Splits `pages` into first half (GPU0) and second half (GPU1).
+    Returns OCR results aligned to the original order: list[list[str]] per page.
+    """
+    opts = opts or {}
+    n = len(pages)
+    mid = n // 2  # first half size
+    part0 = pages[:mid]
+    part1 = pages[mid:]
 
-        toc_links.append({
-            "text": text.strip(),
-            "page": int(link["page"])
-        })
+    ctx = mp.get_context("spawn")
+    q = ctx.Queue()
 
-    return toc_links
+    p0 = ctx.Process(target=_worker,
+                     args=(0, part0, list(range(0, mid)), opts, q),
+                     daemon=True)
+    p1 = ctx.Process(target=_worker,
+                     args=(1, part1, list(range(mid, n)), opts, q),
+                     daemon=True)
+
+    p0.start(); p1.start()
+
+    collected = []
+    # Expect two payloads (one per worker). If a half is empty, that worker returns nothing.
+    for _ in range(2):
+        try:
+            collected.extend(q.get(timeout=1_000))  # generous timeout
+        except Exception:
+            pass
+
+    p0.join(); p1.join()
+
+    collected.sort(key=lambda t: t[0])                # sort by global index
+    ordered = [r for _, r in collected]               # strip indices
+    # If any pages were empty (e.g., odd cases), pad to length n
+    if len(ordered) < n:
+        # create an index->result map, then rebuild
+        m = {i: r for i, r in collected}
+        ordered = [m.get(i, []) for i in range(n)]
+    return ordered
+
+if __name__ == "__main__":
+    # Fill this with your page images (paths or numpy arrays)
+    pages = []  # e.g., ["p1.png","p2.png", ...] or arrays
+
+    easyocr_model_storage_dir = "../easyocr/"
+    opts = {
+        "langs": ["en"],
+        "model_storage_directory": easyocr_model_storage_dir,
+        "download_enabled": False,
+        "verbose": False,
+        # "quantize": True,  # optional VRAM saver
+    }
+
+    results = run_two_readers_half_split(pages, opts)
+    print(f"OCR pages: {len(results)}")
