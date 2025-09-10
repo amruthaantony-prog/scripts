@@ -1,11 +1,11 @@
-# two_gpu_half_split_easyocr.py
+%%writefile two_gpu_easyocr_helper.py
 import os
 import multiprocessing as mp
+import easyocr
 
 def _worker(gpu_id, pages_subset, global_indices, opts, out_q):
-    # Bind before importing EasyOCR
+    # Bind this process to one GPU (must be set before Reader is created)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-    import easyocr
 
     reader = easyocr.Reader(
         opts.get("langs", ["en"]),
@@ -18,65 +18,66 @@ def _worker(gpu_id, pages_subset, global_indices, opts, out_q):
 
     results = []
     for gi, page in zip(global_indices, pages_subset):
-        txt = reader.readtext(page, detail=0, paragraph=False)
+        txt = reader.readtext(page, detail=0, paragraph=False)  # tweak kwargs as you like
         results.append((gi, txt))
     out_q.put(results)
 
 def run_two_readers_half_split(pages, opts=None):
     """
-    Always launches two readers: GPU0 and GPU1.
-    Splits `pages` into first half (GPU0) and second half (GPU1).
-    Returns OCR results aligned to the original order: list[list[str]] per page.
+    Always launches two Readers: GPU0 and GPU1.
+    Splits `pages` list into first half -> GPU0, second half -> GPU1.
+    Returns results aligned to original order (list per page).
     """
     opts = opts or {}
     n = len(pages)
-    mid = n // 2  # first half size
-    part0 = pages[:mid]
-    part1 = pages[mid:]
+    if n == 0:
+        return []
+
+    # Use spawn for safety across platforms
+    mp.set_start_method("spawn", force=True)
+    mid = n // 2
+    part0, part1 = pages[:mid], pages[mid:]
 
     ctx = mp.get_context("spawn")
     q = ctx.Queue()
 
-    p0 = ctx.Process(target=_worker,
-                     args=(0, part0, list(range(0, mid)), opts, q),
-                     daemon=True)
-    p1 = ctx.Process(target=_worker,
-                     args=(1, part1, list(range(mid, n)), opts, q),
-                     daemon=True)
+    procs = [
+        ctx.Process(target=_worker, args=(0, part0, list(range(0, mid)), opts, q), daemon=True),
+        ctx.Process(target=_worker, args=(1, part1, list(range(mid, n)), opts, q), daemon=True),
+    ]
 
-    p0.start(); p1.start()
+    for p in procs: p.start()
 
     collected = []
-    # Expect two payloads (one per worker). If a half is empty, that worker returns nothing.
-    for _ in range(2):
+    for _ in procs:
         try:
-            collected.extend(q.get(timeout=1_000))  # generous timeout
+            collected.extend(q.get())  # one payload per worker
         except Exception:
             pass
 
-    p0.join(); p1.join()
+    for p in procs: p.join()
 
-    collected.sort(key=lambda t: t[0])                # sort by global index
-    ordered = [r for _, r in collected]               # strip indices
-    # If any pages were empty (e.g., odd cases), pad to length n
+    collected.sort(key=lambda t: t[0])
+    ordered = [r for _, r in collected]
+
+    # Pad if something returned nothing (rare)
     if len(ordered) < n:
-        # create an index->result map, then rebuild
         m = {i: r for i, r in collected}
         ordered = [m.get(i, []) for i in range(n)]
     return ordered
 
-if __name__ == "__main__":
-    # Fill this with your page images (paths or numpy arrays)
-    pages = []  # e.g., ["p1.png","p2.png", ...] or arrays
 
-    easyocr_model_storage_dir = "../easyocr/"
-    opts = {
-        "langs": ["en"],
-        "model_storage_directory": easyocr_model_storage_dir,
-        "download_enabled": False,
-        "verbose": False,
-        # "quantize": True,  # optional VRAM saver
-    }
+from two_gpu_easyocr_helper import run_two_readers_half_split
 
-    results = run_two_readers_half_split(pages, opts)
-    print(f"OCR pages: {len(results)}")
+easyocr_model_storage_dir = "../easyocr/"  # your path
+opts = {
+    "langs": ["en"],
+    "model_storage_directory": easyocr_model_storage_dir,
+    "download_enabled": False,
+    "verbose": False,
+    # "quantize": True,  # optional VRAM saver
+}
+
+# pages = [...]  # list of image file paths OR numpy arrays for each page
+results = run_two_readers_half_split(pages, opts)
+print(f"OCR pages: {len(results)}")
